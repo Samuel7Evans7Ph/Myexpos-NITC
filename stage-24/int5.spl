@@ -1,0 +1,130 @@
+// open system call
+
+alias userSP R5;
+alias curr_pid R6;
+alias process_table R7;
+alias sys_call_num R8;
+
+userSP=SP;
+curr_pid=[SYSTEM_STATUS_TABLE +1];
+
+process_table =PROCESS_TABLE  +16*curr_pid;
+
+[process_table +13]=SP;
+SP=[process_table +11]*512 -1;
+
+sys_call_num =[[PTBR +2*(userSP-5)/512]*512 +(userSP-5)%512];
+
+alias ret_adr R10;
+ret_adr=[PTBR +2*(userSP-1)/512]*512 + (userSP-1)%512;
+
+alias file_name R11;
+
+file_name=[[PTBR +2*(userSP-4)/512]*512 + (userSP-4)%512];
+
+if(sys_call_num==INT_OPEN)  then 
+	[process_table +9]=INT_OPEN;
+	 
+	alias ctr R9;
+	ctr=0;
+	 
+	alias res_tab_end R12;
+	res_tab_end=[process_table +11]*512 +512 -16;
+
+	
+	while(ctr<8) do
+		if([res_tab_end+ 2*ctr]==-1) then 
+			break;
+		endif;
+		ctr=ctr+1;
+	endwhile;
+	if(ctr==8 ) then
+	//	print("retunr1");
+		SP=userSP;
+		[process_table +9]=0;
+		[ret_adr]=-3;
+		ireturn;
+	endif;
+
+	multipush(R5,R6,R7,R8,R9,R10,R11,R12);	
+	R1=OPEN;
+	R2=file_name;
+	call FILE_MANAGER;
+	multipop(R5,R6,R7,R8,R9,R10,R11,R12);
+
+	//if this fails
+
+	if(R0<0) then 
+		[ret_adr]=R0;
+	//	print("return 2");
+		SP=userSP;
+		[process_table +9]=0;
+		ireturn;
+	endif;	
+	[res_tab_end +2*ctr]=FILE;
+	[res_tab_end +2*ctr +1]=R0;
+
+	[process_table +9]=0;
+	SP=userSP;
+	[ret_adr]=ctr;
+	ireturn;
+endif;
+
+
+if(sys_call_num ==INT_CLOSE) then 
+	
+	[process_table +9]=INT_CLOSE;
+	
+	alias file_desc R11;
+
+	file_desc=[[PTBR +2*(userSP-4)/512]*512 +(userSP-4)%512];
+
+	if(file_desc<0) then 
+		
+		[process_table +9]=0;
+		SP=userSP;
+		[ret_adr]=-1;
+		ireturn;
+	endif;
+		
+	alias res_tab_end R12;
+
+	res_tab_end=[process_table +11]*512 +512 -16;
+
+	//if the resrouce it not a file 
+	if([res_tab_end +2*file_desc]!=FILE) then 
+		[process_table +9]=0;
+		SP=userSP;
+		[ret_adr]=-1;
+		ireturn;
+	endif;
+
+	alias open_file_entry R9;
+	
+	open_file_entry =[res_tab_end +2*file_desc +1];
+	
+	multipush(R5,R6,R7,R8,R9,R10,R11);
+	R1=CLOSE;
+	R2=open_file_entry;
+	call FILE_MANAGER;
+	multipop(R5,R6,R7,R8,R9,R10,R11);
+
+	[res_tab_end +2*file_desc]=-1;
+	[res_tab_end +2*file_desc+1]=-1;
+
+	[process_table +9]=0;
+	SP=userSP;
+	[ret_adr]=0;
+	ireturn;
+endif;	
+
+
+
+		
+	
+
+
+	
+
+		
+

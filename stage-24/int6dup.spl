@@ -1,0 +1,191 @@
+alias userSP R5;
+userSP=SP;
+
+alias curr_pid R6;
+
+alias process_table R7;
+
+curr_pid=[SYSTEM_STATUS_TABLE +1];
+
+process_table=PROCESS_TABLE +16*curr_pid;
+
+[process_table +9]=7;
+
+[process_table +13]=SP;
+
+SP=[process_table +11]*512 -1;
+
+alias file_desc R8;
+
+file_desc=[[PTBR +2*(userSP-4)/512 ]*512 +(userSP-4)%512];
+
+alias word R9;
+
+word=[[PTBR +2*(userSP-3)/512]*512 + (userSP-3)%512];
+
+alias ret_adr R10;
+ret_adr=[PTBR +2*(userSP-1)/512]*512 + (userSP-1)%512;
+
+if(file_desc==-1) then
+
+	
+	multipush(R5,R6,R7,R8,R9,R10);
+	R1=TERMINAL_READ;
+	R2=curr_pid;
+	R3=word;
+	call DEVICE_MANAGER;
+
+	multipop(R5,R6,R7,R8,R9,R10);
+
+	[process_table +9]=0;
+	SP=userSP;
+
+	[ret_adr]=0;
+	ireturn;
+
+endif;	
+
+//reading from file
+
+if(file_desc<0 ||file_desc>=8) then
+	[ret_adr]=-1;
+	SP=userSP;
+	[process_table +9]=0;
+	ireturn;
+endif;	
+
+alias user_page_end R11;
+user_page_end=[process_table +11]*512 +512 -16;
+
+ 
+if([user_page_end +2*file_desc]!=FILE) then
+	[process_table +9]=0;
+	SP=userSP;
+	[ret_adr]=-1;
+	ireturn;
+endif;
+
+alias open_file_index R12;
+
+open_file_index =[user_page_end +2*file_desc +1];
+
+		
+alias inode_index R13;
+
+inode_index=[OPEN_FILE_TABLE +4*open_file_index];
+
+//going to acquire inode
+
+multipush(R5,R6,R7,R8,R9,R10,R11,R12,R13);
+R1=ACQUIRE_INODE;
+R3=curr_pid;
+R2=inode_index;
+
+multipop(R5,R6,R7,R8,R9,R10,R11,R12,R13);
+
+//if locking fails
+
+if(R0==-1) then 
+	[ret_adr]=-1;
+	SP=userSP;
+	[process_table +9]=0;
+	ireturn;
+endif;
+
+breakpoint;
+
+alias lseek R14;
+lseek=[OPEN_FILE_TABLE +4*open_file_index+2];
+//if the file is root
+
+alias phy_word_adr R15;
+phy_word_adr=[PTBR +2*(word/512)]*512 +(word%512);
+
+//physical address acorresponding to the word
+
+if([OPEN_FILE_TABLE  +4*open_file_index +0]==INODE_ROOT) then 
+	//if the lseek value is the file end release the inode
+	if(lseek>=480) then 	
+		multipush(R5,R6,R7,R8,R9,R10,R11,R12,R13,R14,R15);
+		R1=RELEASE_INODE;
+		R2=inode_index;
+		R3=curr_pid;
+		call RESOURCE_MANAGER;
+		multipop(R5,R6,R7,R8,R9,R10,R11,R12,R13,R14,R15);
+		[ret_adr]=-2;
+		[process_table +9]=0;
+		SP=userSP;
+		ireturn;
+	endif;		
+
+	//othwersiw reading from the memory copy of the root file
+
+	[phy_word_adr]=[ROOT_FILE+lseek];
+	
+	//incrmeenting the lseek position in the open file table
+	[OPEN_FILE_TABLE +4*open_file_index +2]=[OPEN_FILE_TABLE +4*open_file_index +2]+1;
+
+	//return 
+
+
+
+	multipush(R5,R6,R7,R8,R9,R10,R11,R12,R13,R14,R15);
+	R1=RELEASE_INODE;
+	R2=inode_index;
+	R3=curr_pid;
+	call RESOURCE_MANAGER;
+	multipop(R5,R6,R7,R8,R9,R10,R11,R12,R13,R14,R15);
+	[ret_adr]=0;
+	[process_table +9]=0;
+	SP=userSP;
+	ireturn;
+endif;
+	//if the lseek position is same as the file size
+
+	if(lseek>=[INODE_TABLE +16*inode_index +2]) then 
+		multipush(R5,R6,R7,R8,R9,R10,R11,R12,R13,R14,R15);
+		R1=RELEASE_INODE;
+		R2=inode_index;
+		R3=curr_pid;
+		call RESOURCE_MANAGER;
+		multipop(R5,R6,R7,R8,R9,R10,R11,R12,R13,R14,R15);
+		[ret_adr]=-2;
+		[process_table +9]=0;
+		SP=userSP;
+		ireturn;
+	endif;
+
+	
+	multipush(R5,R6,R7,R8,R9,R10,R11,R12,R13,R14,R15);
+	//calling the file manager to place the disk block in the disk buffer
+	breakpoint;
+	R1=BUFFERED_READ;
+	R2=[INODE_TABLE +16*inode_index +8 +(lseek/512)]; //lseek/512
+	R3=(lseek)%512;
+	R4=phy_word_adr;
+	call FILE_MANAGER;
+	multipop(R5,R6,R7,R8,R9,R10,R11,R12,R13,R14,R15);
+	breakpoint;
+
+	[OPEN_FILE_TABLE +4*open_file_index +2]=[OPEN_FILE_TABLE +4*open_file_index +2]+1;
+
+	//realeasing the lock on the inode
+	multipush(R5,R6,R7,R8,R9,R10,R11,R12,R13,R14,R15);
+	R1=RELEASE_INODE;
+	R2=inode_index;
+	R3=curr_pid;
+	call RESOURCE_MANAGER;
+	multipop(R5,R6,R7,R8,R9,R10,R11,R12,R13,R14,R15);
+	[ret_adr]=0; 
+	[process_table +9]=0;
+	SP=userSP;
+	ireturn;
+
+
+
+
+		
+ 
+ 
+
+

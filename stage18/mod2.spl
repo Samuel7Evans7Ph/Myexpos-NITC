@@ -1,0 +1,103 @@
+alias functionNum R1;
+print("mod2");
+
+if(functionNum==GET_FREE_PAGE) then
+	alias pid R11;
+	print("free page");
+	alias processtableentry R12;
+	alias i R13;
+
+	pid=[SYSTEM_STATUS_TABLE+1];
+	processtableentry=PROCESS_TABLE+pid*16;
+	[SYSTEM_STATUS_TABLE+3]=[SYSTEM_STATUS_TABLE+3]+1;
+	print("please print");
+
+	while([SYSTEM_STATUS_TABLE+2]==0) do //while memoruy is full	
+		[processtableentry+4]=WAIT_MEM;
+		call MOD_5;
+	endwhile;
+	[SYSTEM_STATUS_TABLE+3]=[SYSTEM_STATUS_TABLE+3]-1;//decrementing wait mem count
+	[SYSTEM_STATUS_TABLE+2]=[SYSTEM_STATUS_TABLE+2]-1;//incrementing 
+	i=83;
+	while(i<NUM_MEM_PAGES) do 
+		if([MEMORY_FREE_LIST+i]==0) then
+			[MEMORY_FREE_LIST+i]=1;
+			R0=i; 
+			print("got");
+			print("page");
+			print(R0);
+			return;
+
+		endif;
+		i=i+1;
+	endwhile;
+	breakpoint;
+	R0=-1;
+	return;
+endif;	
+if(functionNum==RELEASE_PAGE)then 
+	alias pageNum R2;
+	[MEMORY_FREE_LIST+pageNum]=[MEMORY_FREE_LIST+pageNum]-1;
+	[SYSTEM_STATUS_TABLE+2]=[SYSTEM_STATUS_TABLE+2]+1;//the number of free pages incremented by one
+	alias i R9;
+	i=0;
+	print("release page");
+	while(i<MAX_PROC_NUM)do
+		if([PROCESS_TABLE+i*16+4]==WAIT_MEM)then
+			[PROCESS_TABLE+i*16+4]=READY;
+		endif;
+		i=i+1;
+	endwhile;
+	return;
+endif;
+if(functionNum==GET_CODE_PAGE) then 
+	alias blocknum R2;
+	print(blocknum);
+	alias ctr R10;
+	alias i R11;
+	print("nigg");
+	print("code page");
+	alias pagetableentry R12;
+	ctr=0;
+	while(ctr<MAX_PROC_NUM) do 
+		i=4;
+		while(i<=7) do
+			print("i");
+			if([DISK_MAP_TABLE+ctr*10+i]==blocknum) then  
+				pagetableentry=[PAGE_TABLE_BASE+ctr*20+2*i];
+				if(pagetableentry!=-1) then 
+					[MEMORY_FREE_LIST+pagetableentry]=[MEMORY_FREE_LIST+pagetableentry]-1;//indicates one more process is sharing thqt page
+					R0=pagetableentry;
+					return;
+				endif;
+			endif;
+			i=i+1;
+		endwhile;
+		ctr=ctr+1;
+	endwhile;
+
+	//subsequent part of the code gets executed if the required blocknum has not beeen found in the disk table till now or if the page acorresponding to the block is not valid
+	multipush(R1,R2,R10,R11,R12);
+	print("not found");
+	R1=GET_FREE_PAGE;
+	call MEMORY_MANAGER;
+	multipop(R1,R2,R10,R11,R12);
+	multipush(R0,R1,R2,R10,R11,R12);
+	print("bac ig");
+	R1=DISK_LOAD;
+	R4=blocknum;
+	R2=[SYSTEM_STATUS_TABLE+1];
+	R3=R0;
+	call DEVICE_MANAGER;
+	multipop(R0,R1,R2,R10,R11,R12);
+	// the page is in R0;
+	return;
+endif;	 
+//releasing block
+ if(functionNum==4) then
+ 	alias diskBlockNum R1;
+	[DISK_FREE_LIST+diskBlockNum]=[DISK_FREE_LIST+diskBlockNum]-1;//oneblock is being freed
+	return;
+endif;	
+				
+			

@@ -1,0 +1,23 @@
+int main(){
+decl
+int temp,temp2,cnt;
+enddecl
+
+begin 
+cnt=0;
+temp=exposcall("Fork");
+if(temp<0) then 
+	temp=exposcall("Write",-2,"BAD COMMAND");
+else 
+	if(temp==0) then
+		temp=exposcall("Getppid");
+		temp=exposcall("Wait",temp);
+		temp = exposcall("Exec", "even.xsm");
+	else 
+		temp=exposcall("Exec","odd.xsm");
+	endif;
+endif;
+	return 0;
+		
+end
+}

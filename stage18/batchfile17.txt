@@ -1,0 +1,20 @@
+fdisk
+load --os $HOME/myexpos/stage18/os_startup13.xsm
+load --idle $HOME/myexpos/stage18/infi.xsm
+load --init $HOME/myexpos/stage18/shell.xsm
+load --exec $HOME/myexpos/stage18/linklist.xsm
+load --module 0 $HOME/myexpos/stage18/mod0.xsm
+load --module 1 $HOME/myexpos/stage18/mod1.xsm
+load --module 2 $HOME/myexpos/stage18/mod2.xsm
+load --module 4 $HOME/myexpos/stage18/mod4_ch15.xsm
+load --module 7 $HOME/myexpos/stage18/bootmodule17.xsm
+load --module 5 $HOME/myexpos/stage18/schedulermodule.xsm
+load --library $HOME/myexpos/expl/library.lib
+load --int=timer $HOME/myexpos/stage18/timer_round_robin.xsm
+load --int=6 $HOME/myexpos/stage18/int6.xsm
+load --int=7 $HOME/myexpos/stage18/dupint7.xsm
+load --int=9 $HOME/myexpos/stage18/int9.xsm
+load --int=10 $HOME/myexpos/stage18/haltprog.xsm
+load --int=console $HOME/myexpos/stage18/console_interrupt.xsm
+load --int=disk $HOME/myexpos/stage18/diskinterrupt.xsm
+load --exhandler $HOME/myexpos/stage18/newexception.xsm

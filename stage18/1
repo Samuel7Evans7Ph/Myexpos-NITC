@@ -1,0 +1,112 @@
+alias inodeEntry R9;
+alias pid R10;
+alias userSP R11;
+alias processtable R8;
+alias virtualad R14;
+alias ctr R13;
+alias filename R12;
+alias phyadr R15;
+pid=[SYSTEM_STATUS_TABLE+1];
+processtable=[PROCESS_TABLE+[pid]*16];
+userSP=SP;
+[processtable+13]=SP;
+SP=[processtable+11]*512-1;
+[processtable+9]=9;//setting mode flag to the system call number of exec which is 9
+virtualad=userSP-4;
+ctr=0;
+call AddrTranslation;//calculating the the physcial adress and after that obtaining the file
+filename=[phyadr];
+while(ctr<MAX_FILE_NUM)do 
+	if([INODE_TABLE+ctr*16+1]==filename)then
+		break;
+	endif;
+	ctr=ctr+1;
+endwhile;
+if(ctr==MAX_FILE_NUM || ([INODE_TABLE+ctr*16+0]!=EXEC)) then
+	virtualad=userSP-1;//returning to the user application from where this program was called
+	call AddrTranslation;
+	[phyadr]=-1;
+	[processtable+9]=0;
+	SP=[processtable+13];
+	ireturn;
+endif;
+inodeEntry=ctr;//saving the inode table entry index
+
+multipush(R8,R9,R10,R11,R12,R13,R14,R15);
+R1=EXIT_PROCESS;//passing the function value of exit process
+R2=pid;
+call PROCESS_MANAGER;
+
+multipop(R8,R9,R10,R11,R12,R13,R14,R15);
+
+[MEMORY_FREE_LIST+[processtable+11]]=[MEMORY_FREE_LIST+[processtable+11]]+1;//incrementing the memeory free list entry
+[SYSTEM_STATUS_TABLE+2]=[SYSTEM_STATUS_TABLE+2]-1;
+SP=[processtable+11]*512-1;
+[processtable+4]=RUNNING;//updating the state field
+[processtable+7]=inodeEntry;//saving the indoe tbal entry obtained above in the ctr variable
+
+//LIBRARY
+[PTBR+0]=63;
+[PTBR+1]="0100";
+[PTBR+2]=64;
+[PTBR+3]="0100";
+
+//HEAP
+
+multipush(R8,R9,R10,R11,R12,R13,R14,R15);
+R1=GET_FREE_PAGE;
+call MEMORY_MANAGER;
+[PTBR+4]=R0;
+[PTBR+5]="0110";
+
+R1=GET_FREE_PAGE;
+call MEMORY_MANAGER;
+[PTBR+6]=R0;
+[PTBR+7]="0110";
+multipop(R8,R9,R10,R11,R12,R13,R14,R15);
+
+//loading the code from the disk to the memory
+ctr=0;
+while((ctr<[INODE_TABLE+inodeEntry*16+2])&&(ctr<4)) do 
+	multipush(R8,R9,R10,R11,R12,R13,R14,R15);
+ 	R1=GET_FREE_PAGE;
+	call MEMORY_MANAGER;
+	multipop(R8,R9,R10,R11,R12,R13,R14,R15);
+	[PTBR+2*ctr+8]=R0;//R0 has the page number that is free
+	[PTBR+2*ctr+1+8]="0100";
+	ctr=ctr+1;
+endwhile;
+//stack
+R1 = GET_FREE_PAGE;
+call MEMORY_MANAGER;
+[PTBR+16] = R0;
+[PTBR+17] = "0110";
+R1 = GET_FREE_PAGE;
+call MEMORY_MANAGER;
+[PTBR+18] = R0;
+[PTBR+19] = "0110";
+print("inodentry");
+print("inodentry");
+
+//loading the code from disk to memory
+ctr = 0;
+while (ctr<=([INODE_TABLE+inodeEntry*16+2]/PAGE_SIZE) && (ctr<4) )do
+	R1 = [PTBR + 8 + 2*ctr];
+	R2 = [INODE_TABLE + inodeEntry*16 + 8 + ctr];
+	loadi(R1,R2);
+	print(ctr);
+	print("laoding..")
+	ctr=ctr+1;
+endwhile;
+
+[[PTBR+16]*512]=[[PTBR+8]*512+1];//MAKING THE STACK POINT TO THE BEGINNING OF THE CODE
+SP=8*512;
+[processtable+9]=0;
+ireturn; 
+
+
+AddrTranslation:
+	R15=virtualad/512;
+	R15=[PTBR+2*R15];
+	phyadr=R15*512+virtualad%512;
+	return;

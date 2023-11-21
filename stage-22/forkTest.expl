@@ -1,0 +1,31 @@
+int main(){
+decl
+    int temp, pid;
+enddecl
+
+begin
+    pid = exposcall("Fork");
+    if(pid == -1) then
+        temp = exposcall("Write", -2, "Fork error");
+    else
+	if(pid == 0) then
+            // means its child process
+            temp = exposcall("Write", -2, "CHILD");
+            temp = exposcall("Exec", "odd.xsm");
+        else
+            // parent process
+            temp = exposcall("Write", -2,"PARENT");
+            temp = exposcall("Exec","even.xsm");
+        endif;
+    endif;
+    
+
+
+    return 0;
+
+
+end
+
+}
+
+

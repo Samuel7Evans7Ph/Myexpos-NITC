@@ -1,0 +1,31 @@
+int main(){
+decl 
+int temp,filedesc;
+string filename,word;
+enddecl
+
+begin 
+	temp=exposcall("Write",-2,"File Name");
+	temp=exposcall("Read",-1,filename);
+
+	filedesc=exposcall("Open",filename);
+
+	if(filedesc<0) then 
+		temp=exposcall("Write",-2,"error");
+	else 
+		temp=0;
+		temp=exposcall("Write",-2,filedesc);
+		while(1==1) do
+			temp=exposcall("Read",filedesc ,word);
+			if(temp!=0) then 
+				break;
+			endif;	
+			temp=exposcall("Write",-2,word);
+		endwhile;
+		temp=exposcall("Write",-1,"over");
+	endif;
+	return 0;
+end
+		
+
+}

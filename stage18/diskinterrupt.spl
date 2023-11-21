@@ -1,0 +1,30 @@
+alias currentPID R4;
+alias processtable R5;
+alias i R8;
+currentPID=[SYSTEM_STATUS_TABLE+1];
+processtable=PROCESS_TABLE+currentPID*16;
+
+//switching from user to kernel
+
+[processtable+13]=SP;
+print("entered disk interrupt");
+SP=[processtable+11]*512-1;
+backup;
+i=0;
+[DISK_STATUS_TABLE+0]=0;//no longer busy;
+alias tester R7 ;
+tester = 16;
+while(i<tester) do 
+//	print("loop");
+//	breakpoint;
+	processtable=PROCESS_TABLE+i*16;
+	if([processtable+4]==WAIT_DISK) then
+		[processtable+4]=READY;
+//		print("ready");
+	endif;
+	i=i+1;
+endwhile;
+restore;
+SP=[PROCESS_TABLE+currentPID*16+13];
+ireturn;
+

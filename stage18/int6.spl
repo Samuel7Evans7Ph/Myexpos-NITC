@@ -1,0 +1,84 @@
+//breakpoint;
+//[PROCESS_TABLE + ( [SYSTEM_STATUS_TABLE + 1] * 16) + 13] = SP;
+//[PROCESS_TABLE + [SYSTEM_STATUS_TABLE + 1] * 16 + 9] = 5;
+//alias userSP R0;
+//userSP = SP;
+//// Setting SP to UArea Page number * 512 - 1
+//SP = [PROCESS_TABLE + ([SYSTEM_STATUS_TABLE + 1] * 16) + 11] * 512 - 1;
+//backup;
+////store context
+//alias physicalPageNum R1;
+//alias offset R2;
+//alias fileDescPhysicalAddr R3;
+//physicalPageNum = [PTBR + 2 * ((userSP - 4)/ 512)];
+//offset = (userSP - 4) % 512;
+//fileDescPhysicalAddr = (physicalPageNum * 512) + offset;
+//alias fileDescriptor R4;
+//fileDescriptor=[fileDescPhysicalAddr];
+//
+//if (fileDescriptor != -1)then
+//     alias physicalAddrRetVal R5;
+//     physicalAddrRetVal = ([PTBR + 2 * ((userSP - 1) / 512)] * 512) + ((userSP - 1) % 512);
+//     [physicalAddrRetVal] = -1;
+//else
+//    	alias word R5;    
+//	word = [[PTBR + 2 * ((userSP - 3) / 512)] * 512 + ((userSP - 3) % 512)];
+//	multipush(R0,R1,R2,R3,R4,R5); 
+//	R1=TERMINAL_READ;
+//	R2=[SYSTEM_STATUS_TABLE+1];
+//	R3=word;
+//	call MOD_4;
+//	multipop(R0,R1,R2,R3,R4,R5);
+//	alias physicalAddrRetVal R6;
+//    	physicalAddrRetVal = ([PTBR + 2 * (userSP - 1)/ 512] * 512)+ ((userSP - 1) % 512);
+//    	[physicalAddrRetVal] = 0;
+//endif;
+//[PROCESS_TABLE + [SYSTEM_STATUS_TABLE + 1] * 16 + 9] = 0;
+//restore;
+////restore context
+//SP = [PROCESS_TABLE + ( [SYSTEM_STATUS_TABLE + 1] * 16) + 13];
+//ireturn;
+//
+breakpoint;
+alias PID R10;
+alias userSP R11;
+alias fileDescriptor R12;
+alias word R13;
+alias virtAddr R14;
+alias phyAddr R15;
+PID = [SYSTEM_STATUS_TABLE+1];
+userSP=SP;
+//setting mode to write system call
+[PROCESS_TABLE+PID*16+9]=7;
+//changing stack from user to kernel
+[PROCESS_TABLE+PID*16+13]=SP;
+SP=[PROCESS_TABLE+PID*16+11]*512-1;
+
+virtAddr=userSP-4;
+call AddrTranslation;
+fileDescriptor=[phyAddr];
+
+if(fileDescriptor!=-1)then
+	virtAddr=userSP-1;
+	call AddrTranslation;
+	[phyAddr]=-1;
+else
+	multipush(R10,R11,R12,R13,R14,R15);
+	virtAddr=userSP-3;
+	call AddrTranslation;
+	R1=TERMINAL_READ;
+	R2=PID;
+	R3=[phyAddr];
+	call DEVICE_MANAGER;
+	multipop(R10,R11,R12,R13,R14,R15);
+	virtAddr=userSP-1;
+	call AddrTranslation;
+	[phyAddr]=0;
+endif;
+SP=[PROCESS_TABLE+PID*16+13];
+ireturn;
+
+AddrTranslation:
+	R9=virtAddr/512;
+	phyAddr=[PTBR+2*R9]*512+virtAddr%512;
+	return;

@@ -1,0 +1,22 @@
+int main(){
+decl 
+int temp,start;
+enddecl
+
+begin
+	temp=exposcall("Fork");
+	temp=exposcall("Fork");
+	temp=exposcall("Fork");
+	if(temp<0) then 	
+		temp=exposcall("Write",-2,"Bad command");
+	else 
+		if(temp==0) then 
+			start=exposcall("Exec","ass2.xsm");
+		else 
+			start=exposcall("Exec","ass2.xsm");
+		endif;
+	endif;
+	return 0;
+end	
+			
+}

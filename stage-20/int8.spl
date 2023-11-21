@@ -1,0 +1,210 @@
+alias parent_pid R4;
+alias child_pid R5;
+alias parent_process_table R6;
+parent_pid=[SYSTEM_STATUS_TABLE+1];
+parent_process_table=PROCESS_TABLE+parent_pid*16;
+
+print("fork");
+
+alias parent_page_table R8;
+parent_page_table=PAGE_TABLE_BASE+parent_pid*20;
+alias userSP R7;
+userSP=SP;
+[parent_process_table+13]=SP;
+SP=[parent_process_table+11]*512-1;//setting the SP 
+
+
+[parent_process_table+9]=8;//INT_FORK;
+
+//getting a new pcb entry
+
+multipush(R4,R5,R6,R7,R8);
+R1=GET_PCB_ENTRY;
+call PROCESS_MANAGER;
+multipop(R4,R5,R6,R7,R8);
+
+//if all 16 processes are used 
+child_pid=R0;
+alias child_page_table R9;
+alias child_process_table R10;
+if(child_pid==-1) then
+	[[parent_page_table+2* (userSP-1)/512] * 512 + ((userSP-1) % 512)]=-1;
+	SP=[parent_process_table+13];
+	[parent_process_table+9]=0;
+	ireturn;
+endif;	
+
+child_page_table=PAGE_TABLE_BASE+child_pid*20;
+child_process_table=PROCESS_TABLE+child_pid*16;
+
+//GETTING TWO HEAP PAGES
+
+if([parent_page_table+4]==-1) then
+	multipush(R4,R5,R6,R7,R8,R9,R10);
+	R1=GET_FREE_PAGE;
+	call MEMORY_MANAGER;
+	multipop(R4,R5,R6,R7,R8,R9,R10);
+	[parent_page_table+4]=R0;
+	[parent_page_table+5]="0110";
+endif;	
+
+
+if([parent_page_table+6]==-1) then
+	multipush(R4,R5,R6,R7,R8,R9,R10);
+	R1=GET_FREE_PAGE;
+	call MEMORY_MANAGER;
+	multipop(R4,R5,R6,R7,R8,R9,R10);
+	[parent_page_table+6]=R0;
+	[parent_page_table+7]="0110";
+endif;
+
+
+//getting stack pages
+
+
+multipush(R4,R5,R6,R7,R8,R9,R10);
+R1=GET_FREE_PAGE;
+call MEMORY_MANAGER;
+multipop(R4,R5,R6,R7,R8,R9,R10);
+[child_page_table+16]=R0;
+[child_page_table+17]="0110";
+
+
+
+multipush(R4,R5,R6,R7,R8,R9,R10);
+R1=GET_FREE_PAGE;
+call MEMORY_MANAGER;
+multipop(R4,R5,R6,R7,R8,R9,R10);
+[child_page_table+18]=R0;
+[child_page_table+19]="0110";
+
+
+//setting up user area page
+multipush(R4,R5,R6,R7,R8,R9,R10);
+R1=GET_FREE_PAGE;
+call MEMORY_MANAGER;
+multipop(R4,R5,R6,R7,R8,R9,R10);
+[child_process_table+11]=R0;
+
+//copying the parent process table to the child 
+
+//userid
+[child_process_table+3]=[parent_process_table+3];
+
+//swap flag
+[child_process_table+6]=[parent_process_table+6];
+
+//inode index
+[child_process_table+7]=[parent_process_table+7];
+
+//mode flag
+[child_process_table+4]=CREATED;
+
+
+//user area swap status
+[child_process_table+10]=[parent_process_table+10];
+
+//user stack pointer
+
+[child_process_table+13]=[parent_process_table+13];
+
+//setting ppid
+[child_process_table+2]=parent_pid;
+
+//setting tick
+[child_process_table+0]=0;
+//kernel stack pointer
+[child_process_table+12]=0;
+
+//child mode
+[child_process_table+9]=0;
+
+alias cnt R11;
+cnt=0;
+
+while(cnt<8) do 
+	[[child_process_table+11]*512 + 512 -16 +2*cnt]=[[parent_process_table+11]*512 + 512 - 16 + 2*cnt];
+	[[child_process_table+11]*512+512 - 16 + 2*cnt+1]=[[parent_process_table+11]*512 + 512 -16 + 2*cnt+1];
+	cnt=cnt+1;
+endwhile;	
+cnt=0;
+//setting up the disk map table of the child
+
+while(cnt<10) do 
+	[DISK_MAP_TABLE+child_pid*10+cnt]=[DISK_MAP_TABLE+parent_pid*10+cnt];
+	cnt=cnt+1;
+endwhile;	 
+
+//copying the contents from heap of the parent to the child
+cnt=0;
+while(cnt<8) do  
+	[child_page_table + 2* cnt]=[parent_page_table + 2 * cnt];
+	[child_page_table + 2 * cnt+1]=[parent_page_table + 2 *cnt+1];
+
+	//increasing the mem free count
+
+	if([child_page_table + 2 * cnt]!=-1) then 
+
+		[MEMORY_FREE_LIST+[child_page_table+2*cnt]]=[MEMORY_FREE_LIST+[child_page_table + 2 *cnt]]+1;
+	endif;
+	cnt=cnt+1;
+endwhile;
+
+//copying the stack
+ cnt=0;
+alias phyadr R12;
+
+alias parent_stack R13;
+alias child_stack R14;
+
+phyadr=[parent_page_table+16]*512;
+
+parent_stack=phyadr;
+child_stack=[child_page_table+16]*512;
+
+ while(cnt<512) do 
+ 	[child_stack+cnt]=[parent_stack+cnt];
+	cnt=cnt+1;
+endwhile;	
+
+
+phyadr=[parent_page_table+18]*512;
+
+parent_stack=phyadr;
+child_stack=[child_page_table+18]*512;
+cnt=0;
+
+ while(cnt<512) do 
+ 	[child_stack+cnt]=[parent_stack+cnt];
+	cnt=cnt+1;
+endwhile;	
+
+
+[[child_process_table+11]*512]=BP;
+[child_process_table+12]=1;
+//setting the return value to zero
+
+//return value of parent is child pid
+[[parent_page_table + 2 * (userSP - 1) / 512] * 512 + ((userSP - 1) % 512)] = child_pid;
+
+
+[[PAGE_TABLE_BASE + child_pid*20 + 2*(([PROCESS_TABLE + child_pid*16 + 13]-1)/512)]*512 + (([PROCESS_TABLE + child_pid*16 + 13]-1)%512)] = 0;
+
+//
+[parent_process_table+9]=0;
+
+SP = userSP; 
+ ireturn;
+
+
+
+
+
+
+
+
+
+
+
+
+

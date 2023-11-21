@@ -1,0 +1,96 @@
+breakpoint;
+print("exception");
+alias currentPID R3;
+alias processtableentry R4;
+alias userSP R7;
+alias diskmaptableentry R5;
+alias pagetableentry R6;
+alias virtaddr R8;
+alias phyaddr R9;
+currentPID=[SYSTEM_STATUS_TABLE+1];
+pagetableentry=PAGE_TABLE_BASE+currentPID*20;
+processtableentry=PROCESS_TABLE+currentPID*16;
+diskmaptableentry=DISK_MAP_TABLE+currentPID*10;
+
+[processtableentry+9]=-1;//mode flag set to -1 indicating exception handler
+SP=[PROCESS_TABLE+currentPID*16+13];
+userSP=SP;
+SP=[processtableentry+11]*512-1;
+backup;
+
+multipush(EIP);
+
+if(EC!=0) then
+
+	if(EC==1) then
+		print("illegal memory access");
+		print EIP;
+	endif;
+
+	if(EC==2) then
+		print("illegal memacces");
+	endif;
+
+	if(EC==3) then
+		print("illegal arithmetic");
+	endif;	
+
+	if(userSP==(PTLR*512-1)) then 
+		print("not enough space on userstack");
+	endif;
+	multipush(R3,R4,R5,R6,R7);
+	R1=EXIT_PROCESS;
+	R2=currentPID;
+	call PROCESS_MANAGER;
+	multipop(R3,R4,R5,R6,R7);
+	call MOD_5;
+endif;	
+if(EC==0) then
+
+	if((EPN>3) &&(EPN<8)) then //well epn has the correspoding number of the code page to be loaded 
+
+		multipush(R3,R4,R5,R6,R7);
+		R1=GET_CODE_PAGE;
+		R2=[diskmaptableentry+EPN];
+		call MEMORY_MANAGER;
+		multipop(R3,R4,R5,R6,R7);
+		[pagetableentry+EPN*2]=R0;
+		[pagetableentry+EPN*2+1]="1100";
+		[diskmaptableentry+EPN]=R0;
+		print("code loading");
+	endif;
+	if((EPN>=2) && (EPN<=3)) then //meaning heap page
+		multipush(R3,R4,R5,R6,R7);
+		R1=GET_FREE_PAGE;
+		call MEMORY_MANAGER;
+		multipop(R3,R4,R5,R6,R7);
+		[pagetableentry+EPN*2]=R0;
+		[pagetableentry+EPN*2+1]="1110";
+		[diskmaptableentry+EPN]=R0;
+		print("heap page being loaded");
+
+		multipush(R3,R4,R5,R6,R7);
+		R1=GET_FREE_PAGE;
+		call MEMORY_MANAGER;
+		multipop(R3,R4,R5,R6,R7);
+		[pagetableentry+EPN*2+2]=R0;
+		[pagetableentry+EPN*2+3]="1110";
+		[diskmaptableentry+EPN+1]=R0;
+		print("done,dusted");
+	endif;	
+	[processtableentry+9]=0;//resetting the mode to 0
+	multipop(EIP);
+	restore;
+    SP = [PROCESS_TABLE + [SYSTEM_STATUS_TABLE + 1] * 16 + 13];
+	SP=SP+1;
+	[[PTBR + 2 * (SP/512) ] * 512+ (SP % 512) ]=EIP;
+	print("evide");
+	print([PTBR+2*(SP/512)]*512+(SP%512));
+	ireturn;
+endif;
+halt;
+AddrTranslation:
+	R15=virtaddr/512;
+	R15=[PTBR+2*R15];
+	phyaddr=R15*512+virtaddr%512;
+	return;

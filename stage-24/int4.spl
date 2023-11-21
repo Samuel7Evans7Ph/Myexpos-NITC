@@ -1,0 +1,227 @@
+//create system call
+alias userSP R5;
+userSP=SP;
+
+alias process_table R6;
+alias curr_pid R7;
+
+curr_pid=[SYSTEM_STATUS_TABLE +1];
+process_table=PROCESS_TABLE+ 16*curr_pid;
+[process_table+13]=SP;
+SP=[process_table +11]*512 -1;
+
+alias sys_call_num R8;
+
+alias file_name R9;
+	
+alias return_add R10;
+return_add=[[PTBR + 2*(userSP-1)/512]*512 + (userSP-1)%512];
+alias inode_index R11;
+inode_index=0;
+
+alias perm R12;
+file_name=[[PTBR +2 *(userSP-4)/512]*512 + (userSP-4)%512];
+
+perm=[[PTBR + 2*(userSP-3)/512]*512 + (userSP-3)%512];
+sys_call_num=[[PTBR + 2*(userSP-5)/512] * 512 + (userSP-5) % 512];
+if(sys_call_num==INT_CREATE) then
+
+	[process_table + 9]=1;//setting the mode to create
+	while(inode_index <MAX_FILE_NUM) do 
+		if([INODE_TABLE +inode_index*16 + 1]==file_name) then 
+			
+		return_add=0;
+		SP=userSP;
+		[process_table +9 ]=0;
+		ireturn;
+		endif;
+		inode_index=inode_index+1;
+	endwhile;
+
+
+	inode_index=0;
+
+	while(inode_index <MAX_FILE_NUM) do 
+		if([INODE_TABLE +inode_index*16 + 1]==-1) then 
+			break;
+		endif;
+		inode_index=inode_index+1;
+	endwhile;
+
+	if(inode_index==MAX_FILE_NUM) then 
+		return_add=-1;
+		SP=userSP;
+		[process_table+9]=0;
+		ireturn;
+	endif;
+
+	//if a free entry is found
+
+	alias inode_entry R13;
+	inode_entry=INODE_TABLE +16*inode_index;
+	[inode_entry +1]=file_name;
+	print([inode_entry+1]);
+	print(inode_index);
+	[inode_entry +2]=0;
+	[inode_entry+0]=DATA;
+
+	//setting the block numbers to -1
+
+	[inode_entry +8]=-1;
+	[inode_entry+9]=-1;
+	[inode_entry +10]=-1;
+	[inode_entry +11]=-1;
+	[inode_entry +3]=[process_table+3];
+	[inode_entry +4]=perm;
+
+	//setting root files
+
+	alias root_file_entry R12;
+	root_file_entry=ROOT_FILE + inode_index*8;
+
+	[root_file_entry +0]=file_name;
+	[root_file_entry +1]=0;
+	[root_file_entry +2]=DATA;
+	[root_file_entry+3]=[process_table+3];
+	[root_file_entry + 4]=perm;
+	[process_table + 9]=0;
+
+	SP=userSP;
+	[return_add]=0;
+	ireturn;
+endif;
+//delete system call
+if(sys_call_num ==INT_DELETE) then 
+	[process_table +9]=4;
+
+	inode_index=0;
+	while(inode_index <MAX_FILE_NUM) do 
+		if([INODE_TABLE +inode_index*16 + 1]==file_name) then 
+			break;
+		endif;
+		inode_index=inode_index+1;
+	endwhile;
+
+	//if the file is  not found in the inode index
+	 if(inode_index==MAX_FILE_NUM) then 
+	 	return_add=0;
+		SP=userSP;
+		print("file not found");
+		[process_table +9 ]=0;
+		ireturn;
+	endif;	
+
+//returning -1 if the file format is not data
+	if([INODE_TABLE +16*inode_index ]!=DATA ) then 
+		return_add=-1;
+		SP=userSP;
+		print("not DATA");
+		[process_table+9]=0;
+		ireturn;
+	endif;	
+
+	//if the exclusive permission is set
+	if([INODE_TABLE+16*inode_index +4]==EXCLUSIVE ) then 
+		if([SYSTEM_STATUS_TABLE+0]!=ROOT && [process_table +3]!=[INODE_TABLE+ 16*inode_index+3]) then 
+			
+		return_add=-1;
+		SP=userSP;
+		[process_table+9]=0;
+		ireturn;
+		endif;
+	endif;
+	//acquiring inode
+	multipush(R5,R6,R7,R8,R9,R10,R11,R12);
+	R1=ACQUIRE_INODE;
+	R2=inode_index;
+	R3=curr_pid;
+	call RESOURCE_MANAGER;
+	multipop(R5,R6,R7,R8,R9,R10,R11,R12);	
+	///NOW we must check if the file is opened.Can only delete if the file open count is -1
+	if([FILE_STATUS_TABLE +4*inode_index +1]!=-1) then 
+	//some of the processes have opened it
+		multipush(R5,R6,R7,R8,R9,R10,R11,R12);
+		R1=RELEASE_INODE;
+		R2=inode_index;
+		R3=curr_pid;
+		call RESOURCE_MANAGER;
+		multipop(R5,R6,R7,R8,R9,R10,R11,R12);
+		[return_add]=-2;
+		SP=userSP;
+		[process_table +9]=0;
+		ireturn;
+	endif;
+
+	alias cnt R13;
+	cnt=8;
+	alias block_num R14;
+	alias buffer_index R15;
+
+	while(cnt<12) do 
+		block_num=[INODE_TABLE +16*inode_index +cnt];
+
+		if([DISK_FREE_LIST +block_num]> 0) then 
+			buffer_index=block_num % MAX_BUFFER;
+
+			if([BUFFER_TABLE + 4*buffer_index]==block_num &&[BUFFER_TABLE +4*buffer_index +1]==1) then 
+				[BUFFER_TABLE +4*buffer_index +1]=0;//setting the dirty bit to zero
+			endif;	
+
+				multipush(R5,R6,R7,R8,R9,R10,R11,R12,R13,R14,R15);
+				R1=RELEASE_BLOCK;
+				R2=block_num;
+				call MEMORY_MANAGER;
+				multipop(R5,R6,R7,R8,R9,R10,R11,R12,R13,R14,R15);
+		endif;
+		cnt=cnt+1;
+	endwhile;
+
+	cnt=0;
+	while(cnt<16) do 
+		[INODE_TABLE +16*inode_index +cnt]=-1;
+		cnt=cnt+1;
+	endwhile;
+
+	cnt=0;
+	while(cnt<8) do 
+		[ROOT_FILE +8*inode_index + cnt]=-1;
+		cnt=cnt+1;
+	endwhile;
+
+	multipush(R5,R6,R7,R8,R9,R10,R11,R12,R13,R14,R15);
+	R1=RELEASE_INODE;
+	R2=inode_index;
+	R3=curr_pid;
+
+	call RESOURCE_MANAGER;
+
+	multipop(R5,R6,R7,R8,R9,R10,R11,R12,R13,R14,R15);
+
+	[process_table+ 9]=0;
+
+	[return_add]=0;
+	SP=userSP;
+	print("deleted");
+
+	ireturn;
+endif;	
+
+			
+		
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	 	
+
+

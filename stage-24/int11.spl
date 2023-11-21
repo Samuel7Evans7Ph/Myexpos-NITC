@@ -1,0 +1,111 @@
+alias userSP R1;
+alias current_pid R2;
+current_pid=[SYSTEM_STATUS_TABLE+1];
+
+alias system_call_num R3;
+userSP=SP;
+
+//extracting the system call number
+system_call_num=[[PTBR+2*(userSP-5)/512]*512+(userSP-5)%512];
+
+
+[PROCESS_TABLE+current_pid*16+13]=SP;
+SP=[PROCESS_TABLE+current_pid*16+11]*512-1;
+
+alias process_table R4;
+process_table=PROCESS_TABLE+current_pid*16;
+
+if(system_call_num==INT_WAIT) then // 13 is for wait system call number
+	
+	[process_table+9]=INT_WAIT;// the status is set to wait
+	
+	//the wait system call is passed the pid of the process for which the current process must wait
+
+	alias wait_pid R5;
+	wait_pid=[[PTBR+ 2 * (userSP-4)/512]*512 + ((userSP-4) % 512)];
+	
+	//a process should not wait for itself or for a termianted process
+
+	if([PROCESS_TABLE+wait_pid*16+4]!=TERMINATED || wait_pid!=current_pid) then 	
+		if(wait_pid>=0 && wait_pid<16) then 	
+		
+		//changing the status of the current process to waiting and sheduling the pother processes.
+				
+			[PROCESS_TABLE+current_pid*16+4]=WAIT_PROCESS;
+			[PROCESS_TABLE+current_pid*16+5]=wait_pid;
+
+			multipush(R4,R1);
+			call MOD_5;
+			multipop(R4,R1);
+
+			//resetting the system call number and returning to usermode
+
+			[process_table+9]=0;
+			SP=userSP;
+
+			[[PTBR+2*(userSP-1)/512]*512+(userSP-1)%512]=0;
+			ireturn;
+		else 
+			SP=userSP;
+
+			[[PTBR+2*(userSP-1)/512]*512+(userSP-1)%512]=-1;
+			ireturn;
+		endif;
+	else 
+		R0=-1;
+		SP=userSP;
+		[[PTBR+2*(userSP-1)/512]*512+(userSP-1)%512]=-1;
+		ireturn;
+	endif;
+endif;	
+
+
+if(system_call_num==INT_SIGNAL) then 
+
+//this does not have any arguments
+
+	[process_table+9]=INT_SIGNAL;
+	
+	alias ctr  R5;
+	ctr=0;
+	
+	while(ctr<16) do 
+		if([PROCESS_TABLE+ctr*16+4]==WAIT_PROCESS && [PROCESS_TABLE+ctr*16+5]==current_pid) then 
+			
+			[PROCESS_TABLE+ctr*16+4]=READY;
+			[PROCESS_TABLE+ctr*16+9]=0;
+		endif;
+		ctr=ctr+1;
+	endwhile;
+
+	//storing the return value to zero
+
+	[process_table+9]=0;
+	[[PTBR+2*(userSP-1)/512]*512+(userSP-1)%512]=0;
+	 
+	 
+endif;	 
+
+if(system_call_num== INT_GETPID) then 
+	
+	
+	[process_table+9]=INT_GETPID;
+
+	[[PTBR+2*(userSP-1)/512] *512 + (userSP-1)%512]=[process_table+1];
+
+	[process_table+9]=0;
+endif;
+
+if (system_call_num == INT_GETPPID) then
+		
+	[process_table+9]=INT_GETPPID;
+
+	
+	[[PTBR+2*(userSP-1)/512] *512 + (userSP-1)%512]=[process_table+2];
+
+	[process_table+9]=0;
+endif;	
+
+SP=userSP;
+ireturn;
+

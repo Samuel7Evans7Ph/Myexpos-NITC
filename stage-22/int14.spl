@@ -1,0 +1,129 @@
+alias userSP R5;
+alias sys_call_num R6;
+
+alias process_table R7;
+alias curr_pid R8;
+
+userSP=SP;
+sys_call_num=[[PTBR+ 2 * (userSP-5) / 512] * 512+(userSP-5) % 512];
+
+curr_pid=[SYSTEM_STATUS_TABLE+1];
+
+process_table=PROCESS_TABLE+curr_pid*16;
+[process_table + 13] = SP;
+
+SP=[process_table+11]*512-1;
+alias return_adr R12;
+return_adr=[[PTBR+ 2 * (userSP-1)/512]*512 + (userSP-1)%512];
+if(sys_call_num==INT_SEMLOCK) then
+	print("semlock");
+	[process_table+9]=INT_SEMLOCK; //the sem lock number is 19
+
+	alias sem_id R9;
+	sem_id=[[PTBR+2*(userSP-4)/512]*512 + (userSP-4)%512];
+
+	if(sem_id<0 ||sem_id>7) then // if the sem id is not valid
+		return_adr=-1;
+		SP=userSP;
+		[process_table+9]=0;
+		print("invalid");
+		ireturn;
+	endif;
+
+	//returning if the resource is not a semaphore
+
+	alias user_area_page_end R10;
+	user_area_page_end=[process_table+11]*512 + 512 -16;
+	if( [user_area_page_end + 2 * sem_id]!=SEMAPHORE) then 
+		return_adr=-1;
+		[process_table+9]=0;
+		SP=userSP;
+		print("inavlid");
+		ireturn;
+	endif;
+
+	//if the resource is a semphore and the id is valid
+
+	alias semaphore_table_index R11;
+	semaphore_table_index=[user_area_page_end + 2*sem_id+1];
+
+	while([SEMAPHORE_TABLE+4*semaphore_table_index +0]!=curr_pid &&[SEMAPHORE_TABLE+ 4*semaphore_table_index+0]!=-1) do
+		[process_table+4]=WAIT_SEMAPHORE;
+		[process_table+5]=semaphore_table_index;
+		multipush(R5,R6,R7,R8,R9,R10,R11,R12);
+		call SCHEDULER;
+		multipop(R5,R6,R7,R8,R9,R10,R11,R12);
+	endwhile;
+	
+	[SEMAPHORE_TABLE+ 4*semaphore_table_index+0]=curr_pid;
+
+	[process_table+9]=0;
+	SP=userSP;
+
+	//return valye is 0
+	return_adr=0;
+
+	ireturn;
+endif;
+
+if(sys_call_num==INT_SEMUNLOCK) then 
+	[process_table+9]=INT_SEMUNLOCK;
+	print("sem unlock");
+
+	alias sem_id R9;
+	sem_id=[[PTBR+2*(userSP-4)/512]*512 + (userSP-4)%512];
+	alias user_area_page_end R10;
+	user_area_page_end=[process_table+11]*512 + 512 -16;
+
+	if(sem_id<0 ||sem_id>7||[user_area_page_end +2 *sem_id]!=SEMAPHORE) then // if the sem id is not valid
+		return_adr=-1;
+		SP=userSP;
+		[process_table+9]=0;
+		print("semid invalid");
+		ireturn; 
+	endif;
+
+
+	alias semaphore_table_index R11;
+	semaphore_table_index=[user_area_page_end +2*sem_id+1];
+	
+
+	if([SEMAPHORE_TABLE+ 4*semaphore_table_index]!=-1) then 
+		if([SEMAPHORE_TABLE+4*semaphore_table_index]!=curr_pid) then //the semaphore does not belong to the current process sor returns
+			
+			return_adr=-2;
+			SP=userSP;
+			[process_table+9]=0;
+			print("sem not belong");
+			ireturn;
+		endif;
+		[SEMAPHORE_TABLE+4*semaphore_table_index+0]=-1;//unlocking the semaphore
+		alias ctr R13;
+		ctr=0;
+
+		while(ctr<MAX_PROC_NUM) do 
+			if([PROCESS_TABLE+16*ctr+4]==WAIT_SEMAPHORE &&[PROCESS_TABLE +16*ctr+5]==semaphore_table_index) then
+			[PROCESS_TABLE+16*ctr+4]=READY;
+			endif;
+			ctr=ctr+1;
+		endwhile;
+	endif;
+
+	[process_table+9]=0;
+	alias ctr R13;
+
+	
+		ctr=0;
+
+		while(ctr<MAX_PROC_NUM) do 
+			if([PROCESS_TABLE+16*ctr+4]==WAIT_SEMAPHORE &&[PROCESS_TABLE +16*ctr+5]==semaphore_table_index) then
+			[PROCESS_TABLE+16*ctr+4]=READY;
+			endif;
+			ctr=ctr+1;
+		endwhile;
+		print("sem unlocked");
+	return_adr=0;
+
+	SP=userSP;
+	ireturn;
+endif;	

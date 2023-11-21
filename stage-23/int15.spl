@@ -1,0 +1,71 @@
+
+//shutdown system call
+
+alias userSP R5;
+userSP=SP;
+print("shutdown");
+alias curr_pid R6;
+curr_pid=[SYSTEM_STATUS_TABLE +1];
+alias process_table R7;
+
+process_table=PROCESS_TABLE +16*curr_pid;
+[process_table +13]=SP;
+
+SP=[process_table +11]*512-1;
+[process_table +9] =21;//system call number is 21
+
+
+alias return_adr R8;
+
+return_adr=[[PTBR+ 2*(userSP-1)/512]*512 + (userSP-1)%512];
+print(curr_pid);
+print([process_table +3]);
+
+if(curr_pid!=1 || [process_table +3]!=ROOT) then
+	return_adr=-1;
+	SP=userSP;
+	[process_table +9]=0;
+	print("inside loop");
+	ireturn;
+endif;
+//print("condition");
+
+multipush(R5, R6, R7, R8);
+R1 = DISK_STORE;
+R2 = curr_pid;
+R3 = 59;
+R4 = 3;
+call DEVICE_MANAGER;
+multipop(R5, R6, R7, R8);
+
+multipush(R5, R6, R7, R8);
+R1 = DISK_STORE;
+R2 = curr_pid;
+R3 = 60;
+R4 = 4;
+call DEVICE_MANAGER;
+multipop(R5, R6, R7, R8);
+// root file 62 -- 5
+
+multipush(R5, R6, R7, R8);
+R1 = DISK_STORE;
+R2 = curr_pid;
+R3 = 62;
+R4 = 5;
+call DEVICE_MANAGER;
+multipop(R5, R6, R7, R8);
+//print("here");
+
+// disk free list 61 -- 2
+
+multipush(R5, R6, R7, R8);
+R1 = DISK_STORE;
+R2 = curr_pid;
+R3 = 61;
+R4 = 2;
+call DEVICE_MANAGER;
+multipop(R5, R6, R7, R8);
+//print("bottom");
+
+halt;
+

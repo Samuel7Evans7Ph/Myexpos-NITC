@@ -1,0 +1,41 @@
+alias currentPID R0;
+alias processtable R1;
+alias newPID R2;
+currentPID=[SYSTEM_STATUS_TABLE+1];
+multipush(BP);
+processtable=PROCESS_TABLE+currentPID*16;
+[processtable+12]=SP%512;//saving the offset to the kptr
+[processtable+14]=PTBR;//saving ptbr
+[processtable+15]=PTLR;//Saving ptlr
+alias ctr R3;
+ctr=currentPID+1;
+while(ctr<MAX_PROC_NUM)do 
+	if([PROCESS_TABLE+ctr*16+4]==READY||[PROCESS_TABLE+ctr*16+4]==CREATED)then
+		newPID=ctr;
+		break;
+	endif;	
+	ctr=ctr+1;
+endwhile;
+if(ctr==MAX_PROC_NUM)then
+	newPID=0;//if no new ready/created process has been found then it switches to the init program.
+endif; 
+processtable=PROCESS_TABLE+newPID*16;
+SP=[processtable+11]*512+[processtable+12];
+PTBR=[processtable+14];
+PTLR=[processtable+15];
+[SYSTEM_STATUS_TABLE+1]=newPID;
+if([processtable+4]==CREATED)then	
+	SP=[processtable+13];
+	[processtable+4]=RUNNING;
+	[processtable+9]=0;
+	ireturn;
+endif;
+[processtable+4]=RUNNING;
+[processtable+9]=0;
+multipop(BP);
+return;
+
+
+
+
+
